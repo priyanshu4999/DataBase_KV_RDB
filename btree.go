@@ -1,30 +1,36 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"log"
 )
 
 type BNode struct {
+	//|| type , nKeys | 8*nkeys | 2*nkeys |
+	//| (offset1 = 0)(offset2 = 4 + klen1 + vlen1) .......   |
 	data []byte
 }
 type BnodeInterface interface {
-	btype() uint16
-	nkeys() uint16
-	setHeader(datatype uint16, numberofkeys uint16)
+	btype() uint16                                  //data[0:2]
+	nkeys() uint16                                  //data[2:4] return total num of keys
+	setHeader(datatype uint16, numberofkeys uint16) //Header->[btype,numKeys]
 
-	getPtr(pos uint16) uint64
-	setPtr(pos uint16, value uint64)
+	getPtr(pos uint16) uint64        //data[index at HEADER + pos*Byte ]
+	setPtr(pos uint16, value uint64) //set at data[index at HEADER + pos*Byte ]
 
 	offsetPos(pos uint16) uint16 //helper to getOffset and setOffset
-	getOffset(pos uint16) uint16
-	setOffset(pos uint16, value uint16)
+	//returns index value at HEADER + (pointers len)->8*nkeys +(offset len)->2*(pos-1)
+	//1st offset for 1st kv pair is zero for obvious reasons
+	//last offset  value position is used to only to get length of  node
+	getOffset(pos uint16) uint16        //get offset value from data[offsetpos(nth-offset)]
+	setOffset(pos uint16, value uint16) //set offset value at data[offsetpos(nth-offset)] to len of kvpair
 
-	kvPos(pos uint16) uint16 //helper to getKey and setKey
-	getKey(pos uint16) []byte
-	getVal(pos uint16 )[] byte
-
+	kvPos(pos uint16) uint16  //helper to getKey and setKey
+	getKey(pos uint16) []byte //kv at HEADER + 8*node.nkeys() + 2*node.nkeys() + node.getOffset(idx) upto :klen
+	getVal(pos uint16) []byte // //kv at HEADER + 8*node.nkeys() + 2*node.nkeys() + node.getOffset(idx) + klen upto :vlen
+	nbytes() uint16           //position of last offset
 }
 
 const (
@@ -122,4 +128,32 @@ func (node BNode) getVal(idx uint16) []byte {
 	klen := binary.LittleEndian.Uint16(node.data[pos:])
 	vlen := binary.LittleEndian.Uint16(node.data[pos+2:])
 	return node.data[pos+4+klen:][:vlen]
+}
+func (node BNode) nbytes() uint16 {
+	// totlal bytes == last element offset index last
+	return node.kvPos(node.nkeys())
+}
+
+// //////////////////////// BTREE INSERTION
+// look up key in node
+func nodeLookupLE(node BNode, key []byte) uint16 {
+	nkeys := node.nkeys()
+	found := uint16(0)
+	for i := uint16(1); i < nkeys; i++ {
+		if bytes.Compare(node.getKey(i), key) <= 0 {
+			found = i
+		} else {
+			break
+		}
+	}
+	return found
+
+}
+
+// update leafnodes
+func leafInsert(
+	new BNode, old BNode, idx uint16,
+	key []byte, val []byte,
+) {
+
 }
